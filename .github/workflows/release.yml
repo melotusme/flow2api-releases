@@ -1,0 +1,109 @@
+# Running workflow. The review copy is TheSmallHanCat/flow2api:.github/release-workflow.yml.
+name: Publish signed release
+on:
+  workflow_dispatch:
+    inputs:
+      source_ref:
+        description: Source branch, tag, or full commit SHA
+        default: codex/tauri-rewrite
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: stable-release
+  cancel-in-progress: false
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      needed: ${{ steps.version.outputs.needed }}
+      sha: ${{ steps.version.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: TheSmallHanCat/flow2api
+          ref: ${{ inputs.source_ref || 'codex/tauri-rewrite' }}
+          persist-credentials: false
+      - id: version
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version")
+          DRAFT=$(gh release view "v$VERSION" --repo melotusme/flow2api-releases --json isDraft --jq .isDraft 2>/dev/null || true)
+          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          if [ "$DRAFT" = false ]; then echo 'needed=false' >> "$GITHUB_OUTPUT"; else echo 'needed=true' >> "$GITHUB_OUTPUT"; fi
+  build:
+    needs: version
+    if: needs.version.outputs.needed == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            target: universal-apple-darwin
+            rust_targets: aarch64-apple-darwin,x86_64-apple-darwin
+            bundles: app,dmg
+            prepare: darwin-universal
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            rust_targets: x86_64-pc-windows-msvc
+            bundles: nsis
+            prepare: windows-x86_64
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: desktop
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: TheSmallHanCat/flow2api
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rust_targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: desktop -> target
+      - run: cargo fmt --all --check
+      - run: node --check ui/app.js
+      - run: cargo test --workspace --locked
+      - name: Build signed packages
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
+        run: cargo install tauri-cli --version 2.10.1 --locked && cargo tauri build --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+      - run: node scripts/prepare-release.mjs ${{ matrix.prepare }} ${{ matrix.target }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.prepare }}
+          path: desktop/release-assets/*
+          retention-days: 7
+          if-no-files-found: error
+  publish:
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: TheSmallHanCat/flow2api
+          ref: ${{ needs.version.outputs.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v4
+        with:
+          path: desktop/release-assets
+          merge-multiple: true
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: node scripts/publish-cross.mjs
