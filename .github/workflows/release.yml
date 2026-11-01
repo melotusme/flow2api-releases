@@ -1,5 +1,6 @@
-# Running workflow. The review copy is melotusme/flow2api:.github/release-workflow.yml.
-# Source checkout is the public fork because this account cannot push TheSmallHanCat/flow2api.
+# Review copy. The running workflow lives in the private melotusme/flow2api-releases
+# repository. This file is not under workflows/, so the public source does not publish.
+# Source is melotusme/flow2api because this account cannot push TheSmallHanCat/flow2api.
 name: Publish signed release
 on:
   workflow_dispatch:
@@ -85,7 +86,7 @@ jobs:
         env:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ''
-        run: cargo install tauri-cli --version 2.10.1 --locked && cargo tauri build --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
+        run: npx --yes @tauri-apps/cli@2.10.1 build --ci --target ${{ matrix.target }} --bundles ${{ matrix.bundles }} -- --locked
       - run: node scripts/prepare-release.mjs ${{ matrix.prepare }} ${{ matrix.target }}
       - uses: actions/upload-artifact@v4
         with:
