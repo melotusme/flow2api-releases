@@ -1,10 +1,11 @@
-# Running workflow. The review copy is TheSmallHanCat/flow2api:.github/release-workflow.yml.
+# Running workflow. The review copy is melotusme/flow2api:.github/release-workflow.yml.
+# Source checkout is the public fork because this account cannot push TheSmallHanCat/flow2api.
 name: Publish signed release
 on:
   workflow_dispatch:
     inputs:
       source_ref:
-        description: Source branch, tag, or full commit SHA
+        description: Branch, tag, or full commit SHA on melotusme/flow2api
         default: codex/tauri-rewrite
         required: true
 permissions:
@@ -19,19 +20,20 @@ jobs:
       needed: ${{ steps.version.outputs.needed }}
       sha: ${{ steps.version.outputs.sha }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: TheSmallHanCat/flow2api
-          ref: ${{ inputs.source_ref || 'codex/tauri-rewrite' }}
-          persist-credentials: false
       - id: version
-        working-directory: desktop
         env:
           GH_TOKEN: ${{ github.token }}
+          REF: ${{ inputs.source_ref || 'codex/tauri-rewrite' }}
         run: |
-          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json','utf8')).version")
+          if printf '%s' "$REF" | grep -Eq '^[0-9a-f]{40}$'; then SHA="$REF"; else
+            SHA=$(curl -fsS -A flow2api-release "https://api.github.com/repos/melotusme/flow2api/commits/${REF}" | node -e 'let s="";process.stdin.on("data",d=>s+=d);process.stdin.on("end",()=>{const sha=JSON.parse(s).sha||""; if(!/^[0-9a-f]{40}$/.test(sha)) process.exit(1); process.stdout.write(sha)})')
+          fi
+          curl -fL --retry 3 -A flow2api-release -o source.tar.gz "https://codeload.github.com/melotusme/flow2api/tar.gz/${SHA}"
+          tar -xzf source.tar.gz --strip-components=1
+          rm source.tar.gz
+          VERSION=$(node -p "JSON.parse(require('fs').readFileSync('desktop/src-tauri/tauri.conf.json','utf8')).version")
           DRAFT=$(gh release view "v$VERSION" --repo melotusme/flow2api-releases --json isDraft --jq .isDraft 2>/dev/null || true)
-          echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
           if [ "$DRAFT" = false ]; then echo 'needed=false' >> "$GITHUB_OUTPUT"; else echo 'needed=true' >> "$GITHUB_OUTPUT"; fi
   build:
     needs: version
@@ -56,17 +58,23 @@ jobs:
         working-directory: desktop
         shell: bash
     steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: TheSmallHanCat/flow2api
-          ref: ${{ needs.version.outputs.sha }}
-          persist-credentials: false
+      - name: Fetch pinned source
+        working-directory: ${{ github.workspace }}
+        env:
+          SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then echo '需要完整 commit SHA'; exit 1; fi
+          curl -fL --retry 3 -A flow2api-release -o source.tar.gz "https://codeload.github.com/melotusme/flow2api/tar.gz/${SHA}"
+          tar -xzf source.tar.gz --strip-components=1
+          rm source.tar.gz
+          test -f desktop/src-tauri/tauri.conf.json
       - uses: actions/setup-node@v4
         with:
           node-version: 22
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: ${{ matrix.rust_targets }}
+          components: rustfmt
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: desktop -> target
@@ -92,11 +100,16 @@ jobs:
       run:
         working-directory: desktop
     steps:
-      - uses: actions/checkout@v4
-        with:
-          repository: TheSmallHanCat/flow2api
-          ref: ${{ needs.version.outputs.sha }}
-          persist-credentials: false
+      - name: Fetch pinned source
+        working-directory: ${{ github.workspace }}
+        env:
+          SHA: ${{ needs.version.outputs.sha }}
+        run: |
+          if ! printf '%s' "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then echo '需要完整 commit SHA'; exit 1; fi
+          curl -fL --retry 3 -A flow2api-release -o source.tar.gz "https://codeload.github.com/melotusme/flow2api/tar.gz/${SHA}"
+          tar -xzf source.tar.gz --strip-components=1
+          rm source.tar.gz
+          test -f desktop/scripts/publish-cross.mjs
       - uses: actions/setup-node@v4
         with:
           node-version: 22
