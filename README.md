@@ -1,9 +1,17 @@
-# Flow2API private releases
+# Flow2API releases
 
-安装包和更新清单只放在这个私有仓库。源码仍是公开的 [TheSmallHanCat/flow2api](https://github.com/TheSmallHanCat/flow2api)。不要把这个仓库改成公开。
+Flow2API 桌面版的安装包和更新清单。源码在公开 fork [melotusme/flow2api](https://github.com/melotusme/flow2api)（上游是 [TheSmallHanCat/flow2api](https://github.com/TheSmallHanCat/flow2api)）。
 
-应用用本机 `gh` 登录，在原生后端读取固定仓库的数字 asset ID。令牌不进界面，也不写进配置。检查更新前，账号需要对这个仓库有读取权限。
+## 安装
 
-Actions 里的 Publish signed release 只能手动触发。它按一次解析出的完整 commit SHA 同时构建 macOS universal 和 Windows x64。两个平台都成功后才发布 latest。源码提交还不在 GitHub 上时不要运行。
+- macOS（Apple Silicon / Intel 通用包）：`brew tap melotusme/flow2api && brew install --cask melotusme/flow2api/flow2api`，或下载 [最新 Release](https://github.com/melotusme/flow2api-releases/releases/latest) 里的 `Flow2API.app.tar.gz`。
+- Windows x64：下载最新 Release 的 `Flow2API.windows.x64.exe`，对照 `SHA256SUMS` 校验后安装（静默安装参数是大写 `/S`）。
+- Linux x64：`Flow2API.linux.x64.AppImage`。
 
-签名私钥是仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`，密码为空。这是 Tauri updater 的 minisign，不是 Apple 公证，也不是 Windows Authenticode。macOS 构建使用 ad-hoc 签名。Windows 只有 x64，没有原生 ARM64。
+安装后应用会自动检查这里的最新 Release，下载后先验证签名再安装，不需要 GitHub 登录。
+
+## 发布
+
+Actions 里的 Publish signed release 只能手动触发：`gh workflow run "Publish signed release" -R melotusme/flow2api-releases -f source_ref=main`。它按一次解析出的完整 commit SHA 构建 macOS universal、Windows x64 和 Linux x64，全部成功后才发布 latest。这个仓库是公开的，Actions 免费。
+
+签名私钥是仓库 Secret `TAURI_SIGNING_PRIVATE_KEY`。这是 Tauri updater 的 minisign 签名，不是 Apple 公证，也不是 Windows Authenticode。macOS 使用 ad-hoc 签名。
